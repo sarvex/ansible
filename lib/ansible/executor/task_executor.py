@@ -103,7 +103,7 @@ class TaskExecutor:
         returned as a dict.
         '''
 
-        display.debug("in run() - task %s" % self._task._uuid)
+        display.debug(f"in run() - task {self._task._uuid}")
 
         try:
             try:
@@ -197,7 +197,7 @@ class TaskExecutor:
             except AttributeError:
                 pass
             except Exception as e:
-                display.debug(u"error closing connection: %s" % to_text(e))
+                display.debug(f"error closing connection: {to_text(e)}")
 
     def _get_loop_items(self):
         '''
@@ -213,45 +213,40 @@ class TaskExecutor:
             self._job_vars['ansible_search_path'].append(self._loader.get_basedir())
 
         templar = Templar(loader=self._loader, variables=self._job_vars)
-        items = None
         loop_cache = self._job_vars.get('_ansible_loop_cache')
+        items = None
         if loop_cache is not None:
             # _ansible_loop_cache may be set in `get_vars` when calculating `delegate_to`
             # to avoid reprocessing the loop
             items = loop_cache
         elif self._task.loop_with:
-            if self._task.loop_with in self._shared_loader_obj.lookup_loader:
-                fail = True
-                if self._task.loop_with == 'first_found':
-                    # first_found loops are special. If the item is undefined then we want to fall through to the next value rather than failing.
-                    fail = False
+            if self._task.loop_with not in self._shared_loader_obj.lookup_loader:
+                raise AnsibleError(
+                    f"Unexpected failure in finding the lookup named '{self._task.loop_with}' in the available lookup plugins"
+                )
 
-                loop_terms = listify_lookup_plugin_terms(terms=self._task.loop, templar=templar, loader=self._loader, fail_on_undefined=fail,
-                                                         convert_bare=False)
-                if not fail:
-                    loop_terms = [t for t in loop_terms if not templar.is_template(t)]
+            fail = self._task.loop_with != 'first_found'
+            loop_terms = listify_lookup_plugin_terms(terms=self._task.loop, templar=templar, loader=self._loader, fail_on_undefined=fail,
+                                                     convert_bare=False)
+            if not fail:
+                loop_terms = [t for t in loop_terms if not templar.is_template(t)]
 
-                # get lookup
-                mylookup = self._shared_loader_obj.lookup_loader.get(self._task.loop_with, loader=self._loader, templar=templar)
+            # get lookup
+            mylookup = self._shared_loader_obj.lookup_loader.get(self._task.loop_with, loader=self._loader, templar=templar)
 
-                # give lookup task 'context' for subdir (mostly needed for first_found)
-                for subdir in ['template', 'var', 'file']:  # TODO: move this to constants?
-                    if subdir in self._task.action:
-                        break
-                setattr(mylookup, '_subdir', subdir + 's')
+            # give lookup task 'context' for subdir (mostly needed for first_found)
+            for subdir in ['template', 'var', 'file']:  # TODO: move this to constants?
+                if subdir in self._task.action:
+                    break
+            setattr(mylookup, '_subdir', f'{subdir}s')
 
-                # run lookup
-                items = wrap_var(mylookup.run(terms=loop_terms, variables=self._job_vars, wantlist=True))
-            else:
-                raise AnsibleError("Unexpected failure in finding the lookup named '%s' in the available lookup plugins" % self._task.loop_with)
-
+            # run lookup
+            items = wrap_var(mylookup.run(terms=loop_terms, variables=self._job_vars, wantlist=True))
         elif self._task.loop is not None:
             items = templar.template(self._task.loop)
             if not isinstance(items, list):
                 raise AnsibleError(
-                    "Invalid data passed to 'loop', it requires a list, got this instead: %s."
-                    " Hint: If you passed a list/dict of just one element,"
-                    " try adding wantlist=True to your lookup invocation or use q/query instead of lookup." % items
+                    f"Invalid data passed to 'loop', it requires a list, got this instead: {items}. Hint: If you passed a list/dict of just one element, try adding wantlist=True to your lookup invocation or use q/query instead of lookup."
                 )
 
         return items
@@ -262,8 +257,6 @@ class TaskExecutor:
         into an array named 'results' which is inserted into the final result
         along with the item for which the loop ran.
         '''
-
-        results = []
 
         # make copies of the job vars and task so we can add the item to
         # the variables and re-validate the task with the item variable
@@ -292,14 +285,15 @@ class TaskExecutor:
             label = '{{' + loop_var + '}}'
 
         if loop_var in task_vars:
-            display.warning(u"%s: The loop variable '%s' is already in use. "
-                            u"You should set the `loop_var` value in the `loop_control` option for the task"
-                            u" to something else to avoid variable collisions and unexpected behavior." % (self._task, loop_var))
+            display.warning(
+                f"{self._task}: The loop variable '{loop_var}' is already in use. You should set the `loop_var` value in the `loop_control` option for the task to something else to avoid variable collisions and unexpected behavior."
+            )
 
         ran_once = False
 
         no_log = False
         items_len = len(items)
+        results = []
         for item_index, item in enumerate(items):
             task_vars['ansible_loop_var'] = loop_var
 
@@ -323,7 +317,7 @@ class TaskExecutor:
                     task_vars['ansible_loop']['nextitem'] = items[item_index + 1]
                 except IndexError:
                     pass
-                if item_index - 1 >= 0:
+                if item_index >= 1:
                     task_vars['ansible_loop']['previtem'] = items[item_index - 1]
 
             # Update template vars to reflect current loop iteration
@@ -334,7 +328,9 @@ class TaskExecutor:
                 try:
                     time.sleep(float(loop_pause))
                 except ValueError as e:
-                    raise AnsibleError('Invalid pause value: %s, produced error: %s' % (loop_pause, to_native(e)))
+                    raise AnsibleError(
+                        f'Invalid pause value: {loop_pause}, produced error: {to_native(e)}'
+                    )
             else:
                 ran_once = True
 
@@ -375,10 +371,12 @@ class TaskExecutor:
             try:
                 res['_ansible_item_label'] = templar.template(label, cache=False)
             except AnsibleUndefinedVariable as e:
-                res.update({
-                    'failed': True,
-                    'msg': 'Failed to template loop_control.label: %s' % to_text(e)
-                })
+                res.update(
+                    {
+                        'failed': True,
+                        'msg': f'Failed to template loop_control.label: {to_text(e)}',
+                    }
+                )
 
             tr = TaskResult(
                 self._host.name,

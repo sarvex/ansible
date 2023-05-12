@@ -35,7 +35,7 @@ class SanityTest:
 
             python = pathlib.Path(venv_dir, 'bin', 'python')
             pip = [python, '-m', 'pip', '--disable-pip-version-check']
-            env = dict()
+            env = {}
 
             pip_freeze = subprocess.run(pip + ['freeze'], env=env, check=True, capture_output=True, text=True)
 

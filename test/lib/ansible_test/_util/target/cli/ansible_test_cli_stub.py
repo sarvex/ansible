@@ -24,8 +24,9 @@ def main(args=None):
     from ansible_test._util.target.common.constants import CONTROLLER_PYTHON_VERSIONS
 
     if version_to_str(sys.version_info[:2]) not in CONTROLLER_PYTHON_VERSIONS:
-        raise SystemExit('This version of ansible-test cannot be executed with Python version %s. Supported Python versions are: %s' % (
-            version_to_str(sys.version_info[:3]), ', '.join(CONTROLLER_PYTHON_VERSIONS)))
+        raise SystemExit(
+            f"This version of ansible-test cannot be executed with Python version {version_to_str(sys.version_info[:3])}. Supported Python versions are: {', '.join(CONTROLLER_PYTHON_VERSIONS)}"
+        )
 
     # noinspection PyProtectedMember
     from ansible_test._internal import main as cli_main
